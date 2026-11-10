@@ -1,7 +1,7 @@
 import os
 import re
 import docx
-from docx.shared import Inches, Pt
+from docx.shared import Inches, Pt, Cm
 from docx.enum.section import WD_ORIENTATION
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_ALIGN_VERTICAL
@@ -54,13 +54,13 @@ if uploaded_files and st.button("🚀 開始自動排序並生成 Word 檔", typ
     
     doc = docx.Document()
     
-    # 【重點變更 1】改為 A4 直式設定 (210 x 297 mm)
+    # A4 直式設定 (210 x 297 mm)
     section = doc.sections[0]
     section.orientation = WD_ORIENTATION.PORTRAIT
     section.page_width = Inches(8.27)
     section.page_height = Inches(11.69)
     
-    # 邊界微調
+    # 頁面邊界微調
     section.top_margin = Inches(0.4)
     section.bottom_margin = Inches(0.4)
     section.left_margin = Inches(0.4)
@@ -80,51 +80,46 @@ if uploaded_files and st.button("🚀 開始自動排序並生成 Word 檔", typ
         title_run.bold = True
         title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # 2. 表頭雙欄資訊表
-        info_table = doc.add_table(rows=1, cols=2)
+        # 2. 表頭單欄資訊表 (工程名稱 :   項目:   日期: 同一行)
+        info_table = doc.add_table(rows=1, cols=1)
         info_table.style = 'Table Grid'
         info_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
         info_table.autofit = False
-        
-        info_table.columns[0].width = Inches(4.8)
-        info_table.columns[1].width = Inches(2.6)
+        info_table.columns[0].width = Inches(7.47)
         
         p0 = info_table.cell(0, 0).paragraphs[0]
         p0.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        r0 = p0.add_run(f"工程名稱：{project_name}")
+        r0 = p0.add_run(f"工程名稱：{project_name}     項目：{item_type}     日期：{check_date} (第 {i // photos_per_page + 1} 頁)")
         r0.font.size = Pt(11)
         r0.bold = True
         
-        p1 = info_table.cell(0, 1).paragraphs[0]
-        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r1 = p1.add_run(f"檢查日期：{check_date} (第 {i // photos_per_page + 1} 頁)")
-        r1.font.size = Pt(11)
-        r1.bold = True
+        doc.add_paragraph().paragraph_format.space_after = Pt(4)
         
-        doc.add_paragraph().paragraph_format.space_after = Pt(2)
-        
-        # 3. 建立主表格 (直式 3列 x 2欄 = 一頁 6 張卡片)
-        main_table = doc.add_table(rows=3, cols=2)
-        main_table.style = 'Table Grid'
-        main_table.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # 3. 建立主佈局表格 (5 列 x 2 欄：包含 3 排照片卡片與列間 2 公分間距)
+        main_table = doc.add_table(rows=5, cols=2)
         main_table.autofit = False
+        
+        # 設定第 2、4 列為 2 公分 (2.0 cm) 高度隔行間距
+        main_table.rows[1].height = Cm(2.0)
+        main_table.rows[3].height = Cm(2.0)
         
         for idx, photo_file in enumerate(batch):
             filename = photo_file.name
             raw_title = os.path.splitext(filename)[0]
             
-            row_idx = idx // 2
+            # 計算卡片放置於第 0、2、4 列
+            card_row = (idx // 2) * 2
             col_idx = idx % 2
             
-            parent_cell = main_table.cell(row_idx, col_idx)
+            parent_cell = main_table.cell(card_row, col_idx)
             
-            # 卡片內部：上方照片 (位置 ❷)、下方說明 (位置 ❶)
+            # 卡片本體 (帶外框線)
             sub_table = parent_cell.add_table(rows=2, cols=1)
             sub_table.style = 'Table Grid'
             sub_table.autofit = False
             sub_table.columns[0].width = Inches(3.65)
             
-            # 位置 ❷：照片區
+            # 位置 ❷：照片區 (上方 80%)
             cell_photo = sub_table.cell(0, 0)
             cell_photo.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             p_img = cell_photo.paragraphs[0]
@@ -132,7 +127,7 @@ if uploaded_files and st.button("🚀 開始自動排序並生成 Word 檔", typ
             p_img.paragraph_format.space_before = Pt(0)
             p_img.paragraph_format.space_after = Pt(0)
             
-            # 【重點變更 2】自動判斷照片直橫向並調整最大顯示尺寸
+            # 自動判斷直橫向以最大化呈現照片
             photo_file.seek(0)
             try:
                 img = Image.open(photo_file)
@@ -143,13 +138,13 @@ if uploaded_files and st.button("🚀 開始自動排序並生成 Word 檔", typ
             
             run_img = p_img.add_run()
             if h > w:
-                # 直照片：控制最大高度，使照片比例大幅放大且不溢出
-                run_img.add_picture(photo_file, height=Inches(2.35))
+                # 直照片放大高度
+                run_img.add_picture(photo_file, height=Inches(2.15))
             else:
-                # 橫照片：控制最大寬度，滿格呈現
+                # 橫照片放大寬度
                 run_img.add_picture(photo_file, width=Inches(3.4))
             
-            # 位置 ❶：下方說明區
+            # 位置 ❶：說明區 (下方 20%)
             cell_desc = sub_table.cell(1, 0)
             set_cell_border_top_dashed(cell_desc)
             cell_desc.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
@@ -159,9 +154,9 @@ if uploaded_files and st.button("🚀 開始自動排序並生成 Word 檔", typ
             p_desc.paragraph_format.space_before = Pt(2)
             p_desc.paragraph_format.space_after = Pt(2)
             
-            r_item = p_desc.add_run(f"項目：{item_type}  │  說明：{raw_title}")
-            r_item.font.size = Pt(9)
-            r_item.font.bold = True
+            r_desc = p_desc.add_run(f"說明：{raw_title}")
+            r_desc.font.size = Pt(9.5)
+            r_desc.font.bold = True
             
         if i + photos_per_page < len(sorted_files):
             doc.add_page_break()
